@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:9
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: employees
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./employees.sql:/docker-entrypoint-initdb.d/01-employees.sql:ro
+      - ./objects.sql:/docker-entrypoint-initdb.d/02-objects.sql:ro
+      - ./show_elapsed.sql:/docker-entrypoint-initdb.d/03-show_elapsed.sql:ro
+      - ./load_departments.dump:/docker-entrypoint-initdb.d/load_departments.dump:ro
+      - ./load_employees.dump:/docker-entrypoint-initdb.d/load_employees.dump:ro
+      - ./load_dept_emp.dump:/docker-entrypoint-initdb.d/load_dept_emp.dump:ro
+      - ./load_dept_manager.dump:/docker-entrypoint-initdb.d/load_dept_manager.dump:ro
+      - ./load_titles.dump:/docker-entrypoint-initdb.d/load_titles.dump:ro
+      - ./load_salaries1.dump:/docker-entrypoint-initdb.d/load_salaries1.dump:ro
+      - ./load_salaries2.dump:/docker-entrypoint-initdb.d/load_salaries2.dump:ro
+      - ./load_salaries3.dump:/docker-entrypoint-initdb.d/load_salaries3.dump:ro
+    command: >
+      --default-authentication-plugin=mysql_native_password
+      --sql-mode=STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  mysql_data:
+    driver: local

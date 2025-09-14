@@ -115,18 +115,75 @@ Both MD5 and SHA1 checksums are provided for data integrity verification.
 - `sql_test.sh` - Bash-based testing script
 - `test_versions.sh` - Multi-version testing script
 
+**Docker development files:**
+- `docker-compose.mysql.yml` - MySQL development environment with Adminer
+- `docker-compose.postgres.yml` - PostgreSQL development environment with pgAdmin
+- `employees_postgres.sql` - PostgreSQL-compatible schema
+- `load_postgres_data.sql` - PostgreSQL data loading script
+
 **Additional components:**
 - `sakila/` - Subset of Sakila sample database
 - `objects.sql` - Additional database objects (views, procedures, functions)
 - `show_elapsed.sql` - Performance timing utilities
 
+## Docker Development Environment
+
+**Start MySQL development environment:**
+```bash
+docker-compose -f docker-compose.mysql.yml up -d
+```
+
+**Start PostgreSQL development environment:**
+```bash
+docker-compose -f docker-compose.postgres.yml up -d
+```
+
+**Connect to databases:**
+```bash
+# MySQL
+mysql -h localhost -P 3306 -u root -proot employees
+
+# PostgreSQL
+psql -h localhost -p 5432 -U postgres -d postgres
+```
+
+**Access web administration interfaces:**
+- MySQL (Adminer): http://localhost:8080
+- PostgreSQL (pgAdmin): http://localhost:8081
+
+**Stop and cleanup:**
+```bash
+# Stop MySQL environment
+docker-compose -f docker-compose.mysql.yml down
+
+# Stop PostgreSQL environment
+docker-compose -f docker-compose.postgres.yml down
+
+# Remove volumes (deletes all data)
+docker-compose -f docker-compose.mysql.yml down -v
+docker-compose -f docker-compose.postgres.yml down -v
+```
+
+**Check database status:**
+```bash
+# MySQL
+docker-compose -f docker-compose.mysql.yml logs mysql
+
+# PostgreSQL  
+docker-compose -f docker-compose.postgres.yml logs postgres
+```
+
 ## Prerequisites
 
+**For native installation:**
 Requires MySQL 5.0+ with the following privileges:
 - SELECT, INSERT, UPDATE, DELETE
 - CREATE, DROP, RELOAD, REFERENCES
 - INDEX, ALTER, SHOW DATABASES
 - CREATE TEMPORARY TABLES, LOCK TABLES, EXECUTE, CREATE VIEW
+
+**For Docker development:**
+Requires Docker and Docker Compose installed on your system.
 
 ## License and Disclaimer
 

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./employees_postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./load_postgres_data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+      - ./load_departments.dump:/docker-entrypoint-initdb.d/load_departments.dump:ro
+      - ./load_employees.dump:/docker-entrypoint-initdb.d/load_employees.dump:ro
+      - ./load_dept_emp.dump:/docker-entrypoint-initdb.d/load_dept_emp.dump:ro
+      - ./load_dept_manager.dump:/docker-entrypoint-initdb.d/load_dept_manager.dump:ro
+      - ./load_titles.dump:/docker-entrypoint-initdb.d/load_titles.dump:ro
+      - ./load_salaries1.dump:/docker-entrypoint-initdb.d/load_salaries1.dump:ro
+      - ./load_salaries2.dump:/docker-entrypoint-initdb.d/load_salaries2.dump:ro
+      - ./load_salaries3.dump:/docker-entrypoint-initdb.d/load_salaries3.dump:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U employees -d employees"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: >
+      postgres
+      -c log_statement=all
+      -c log_destination=stderr
+      -c log_min_duration_statement=0
+      -c shared_preload_libraries=pg_stat_statements
+
+volumes:
+  postgres_data:
+    driver: local
