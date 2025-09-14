@@ -99,6 +99,43 @@ The database includes built-in validation through checksums. Expected values:
 
 Both MD5 and SHA1 checksums are provided for data integrity verification.
 
+## Standardized Database Structure
+
+Each database follows a standardized structure for consistent loading and testing:
+
+**init.sql**: Every database directory contains an `init.sql` file that specifies which files to load using `source` commands. The setup script processes these files recursively, resolving all source commands and creating a single executable SQL file.
+
+Example `init.sql`:
+```sql
+-- Load main database schema and data
+source employees.sql;
+
+-- Load additional objects
+source objects.sql;
+```
+
+**integration_tests.sql**: Every database directory contains comprehensive integration tests that validate:
+- Database and table existence
+- Correct record counts
+- Data integrity constraints
+- View and relationship functionality
+
+Example test output:
+```
+test_name                     | result
+------------------------------|--------
+Database exists               | PASS
+Employee count               | PASS
+Data integrity checks        | PASS
+```
+
+**Recursive Source Processing**: The setup script intelligently processes `source` commands by:
+1. Reading the `init.sql` file line by line
+2. Detecting `source` commands and resolving file paths
+3. Recursively processing referenced files (handling nested source commands)
+4. Creating a single processed SQL file with all content embedded
+5. Executing the processed file in the database
+
 ## File Structure
 
 **Root directory:**
@@ -107,6 +144,8 @@ Both MD5 and SHA1 checksums are provided for data integrity verification.
 - `docker-compose.postgres.yml` - PostgreSQL development environment with pgAdmin
 
 **databases/employees/mysql/ - MySQL Employee Database:**
+- `init.sql` - **Standardized initialization file** specifying what to load
+- `integration_tests.sql` - **Standardized test file** to validate database loading
 - `employees.sql` - Main database schema and data loader
 - `employees_partitioned.sql` - Partitioned version for MySQL 5.5+
 - `employees_partitioned_5.1.sql` - Partitioned version for MySQL 5.1
@@ -119,10 +158,14 @@ Both MD5 and SHA1 checksums are provided for data integrity verification.
 - `show_elapsed.sql` - Performance timing utilities
 
 **databases/employees/postgres/ - PostgreSQL Employee Database:**
+- `init.sql` - **Standardized initialization file** specifying what to load
+- `integration_tests.sql` - **Standardized test file** to validate database loading
 - `employees_postgres.sql` - PostgreSQL-compatible schema
 - `load_postgres_data.sql` - PostgreSQL data loading script
 
 **databases/sakila/ - Sakila Sample Database:**
+- `init.sql` - **Standardized initialization file** specifying what to load
+- `integration_tests.sql` - **Standardized test file** to validate database loading
 - `README.md` - Sakila database documentation
 - `sakila-mv-schema.sql` - Sakila database schema
 - `sakila-mv-data.sql` - Sakila database data

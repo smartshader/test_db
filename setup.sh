@@ -121,13 +121,18 @@ EOF
                 print_color $BLUE "  → Adding MySQL employees database..."
                 cat >> "$init_file" << 'EOF'
 
-# Load employees database with source command processing
+# Load employees database using standardized init.sql
 echo "Loading employees database..."
 processed_file=$(mktemp)
-process_sql_file "/databases/employees/mysql/employees.sql" "$processed_file"
+process_sql_file "/databases/employees/mysql/init.sql" "$processed_file"
 mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_file"
 rm -f "$processed_file"
 echo "✓ Employees database loaded with all data"
+
+# Run integration tests
+echo "Running employees database integration tests..."
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "/databases/employees/mysql/integration_tests.sql"
+echo "✓ Employees database tests completed"
 
 EOF
                 ;;
@@ -135,16 +140,18 @@ EOF
                 print_color $BLUE "  → Adding Sakila database..."
                 cat >> "$init_file" << 'EOF'
 
-# Load Sakila database
+# Load Sakila database using standardized init.sql
 echo "Loading Sakila database..."
-processed_schema=$(mktemp)
-processed_data=$(mktemp)
-process_sql_file "/databases/sakila/sakila-mv-schema.sql" "$processed_schema"
-process_sql_file "/databases/sakila/sakila-mv-data.sql" "$processed_data"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_schema"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_data"
-rm -f "$processed_schema" "$processed_data"
+processed_file=$(mktemp)
+process_sql_file "/databases/sakila/init.sql" "$processed_file"
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_file"
+rm -f "$processed_file"
 echo "✓ Sakila database loaded"
+
+# Run integration tests
+echo "Running Sakila database integration tests..."
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "/databases/sakila/integration_tests.sql"
+echo "✓ Sakila database tests completed"
 
 EOF
                 ;;
@@ -174,76 +181,17 @@ generate_postgres_init() {
                 print_color $BLUE "  → Adding PostgreSQL employees database..."
                 cat >> "$init_file" << 'EOF'
 
--- Load employees database
-\i /databases/employees/postgres/employees_postgres.sql
+-- Load employees database using standardized init.sql
+\i /databases/employees/postgres/init.sql
 EOF
                 
-                # Create data loading script
-                cat > "init/postgres/02-load-employees-data.sh" << 'EOF'
-#!/bin/bash
-# Load employees data into PostgreSQL
-
-echo "Loading employees data into PostgreSQL..."
-
-# Load data using psql
-psql -U postgres -d postgres << 'EOSQL'
--- Load departments data
-\copy departments FROM '/databases/employees/mysql/load_departments.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Load employees data  
-\copy employees FROM '/databases/employees/mysql/load_employees.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Load dept_emp data
-\copy dept_emp FROM '/databases/employees/mysql/load_dept_emp.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Load dept_manager data
-\copy dept_manager FROM '/databases/employees/mysql/load_dept_manager.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Load titles data
-\copy titles FROM '/databases/employees/mysql/load_titles.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Load salaries data (split into 3 files)
-\copy salaries FROM '/databases/employees/mysql/load_salaries1.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-\copy salaries FROM '/databases/employees/mysql/load_salaries2.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-\copy salaries FROM '/databases/employees/mysql/load_salaries3.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
-
--- Display statistics
-SELECT 
-    'employees' as table_name, 
-    count(*) as record_count 
-FROM employees
-UNION ALL
-SELECT 
-    'departments' as table_name, 
-    count(*) as record_count 
-FROM departments
-UNION ALL
-SELECT 
-    'dept_emp' as table_name, 
-    count(*) as record_count 
-FROM dept_emp
-UNION ALL
-SELECT 
-    'dept_manager' as table_name, 
-    count(*) as record_count 
-FROM dept_manager
-UNION ALL
-SELECT 
-    'titles' as table_name, 
-    count(*) as record_count 
-FROM titles
-UNION ALL
-SELECT 
-    'salaries' as table_name, 
-    count(*) as record_count 
-FROM salaries
-ORDER BY table_name;
-
-EOSQL
-
-echo "Employees data loading completed!"
+                # Create integration test script
+                cat > "init/postgres/02-run-integration-tests.sql" << 'EOF'
+-- Run integration tests for employees database
+\echo 'Running employees database integration tests...'
+\i /databases/employees/postgres/integration_tests.sql
+\echo 'Employees database tests completed'
 EOF
-                chmod +x "init/postgres/02-load-employees-data.sh"
                 ;;
         esac
     done

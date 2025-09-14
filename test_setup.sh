@@ -141,12 +141,15 @@ test_database_files() {
     print_test_header "Database Files Existence"
     
     local required_files=(
+        "databases/employees/mysql/init.sql"
+        "databases/employees/mysql/integration_tests.sql"
         "databases/employees/mysql/employees.sql"
-        "databases/employees/mysql/load_departments.dump"
-        "databases/employees/mysql/load_employees.dump"
+        "databases/employees/postgres/init.sql"
+        "databases/employees/postgres/integration_tests.sql"
         "databases/employees/postgres/employees_postgres.sql"
+        "databases/sakila/init.sql"
+        "databases/sakila/integration_tests.sql"
         "databases/sakila/sakila-mv-schema.sql"
-        "databases/sakila/sakila-mv-data.sql"
     )
     
     local missing_files=()
@@ -158,7 +161,7 @@ test_database_files() {
     done
     
     if [ ${#missing_files[@]} -eq 0 ]; then
-        log_test_result "database_files" "PASS" "All required database files exist"
+        log_test_result "database_files" "PASS" "All required database files exist including standardized init.sql and integration_tests.sql"
     else
         log_test_result "database_files" "FAIL" "Missing files: ${missing_files[*]}"
     fi
@@ -347,7 +350,52 @@ test_cleanup_functionality() {
     fi
 }
 
-# Test 9: Test initialization script generation and validation
+# Test 9: Test standardized database structure
+test_standardized_structure() {
+    print_test_header "Standardized Database Structure"
+    
+    # Check that each database has init.sql and integration_tests.sql
+    local database_dirs=(
+        "databases/employees/mysql"
+        "databases/employees/postgres"
+        "databases/sakila"
+    )
+    
+    local structure_valid=true
+    local issues=()
+    
+    for db_dir in "${database_dirs[@]}"; do
+        if [ ! -f "$db_dir/init.sql" ]; then
+            structure_valid=false
+            issues+=("Missing $db_dir/init.sql")
+        fi
+        
+        if [ ! -f "$db_dir/integration_tests.sql" ]; then
+            structure_valid=false
+            issues+=("Missing $db_dir/integration_tests.sql")
+        fi
+        
+        # Validate that init.sql contains source commands
+        if [ -f "$db_dir/init.sql" ] && ! grep -q "source" "$db_dir/init.sql"; then
+            structure_valid=false
+            issues+=("$db_dir/init.sql does not contain source commands")
+        fi
+        
+        # Validate that integration_tests.sql contains test structure
+        if [ -f "$db_dir/integration_tests.sql" ] && ! grep -q "test_name" "$db_dir/integration_tests.sql"; then
+            structure_valid=false
+            issues+=("$db_dir/integration_tests.sql does not contain proper test structure")
+        fi
+    done
+    
+    if [ "$structure_valid" = true ]; then
+        log_test_result "standardized_structure" "PASS" "All databases follow standardized structure with init.sql and integration_tests.sql"
+    else
+        log_test_result "standardized_structure" "FAIL" "Structure issues: ${issues[*]}"
+    fi
+}
+
+# Test 10: Test initialization script generation and validation
 test_init_script_generation() {
     print_test_header "Initialization Script Generation"
     
@@ -427,6 +475,7 @@ run_all_tests() {
     test_directory_structure
     test_database_files
     test_docker_compose_files
+    test_standardized_structure
     test_init_script_generation
     test_cleanup_functionality
     
