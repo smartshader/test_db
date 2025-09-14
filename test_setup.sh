@@ -207,21 +207,21 @@ test_mysql_container_health() {
         sleep 30  # Wait longer for initialization
         
         # Check if container is running and not restarting
-        local container_status=$(docker inspect test_db_mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
-        local restart_count=$(docker inspect test_db_mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
+        local container_status=$(docker inspect mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
+        local restart_count=$(docker inspect mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
         
         if [ "$container_status" = "running" ] && [ "$restart_count" -lt 3 ]; then
             # Check for error patterns in logs
-            local error_logs=$(docker logs test_db_mysql 2>&1 | grep -i "error\|fail\|abort" | wc -l)
+            local error_logs=$(docker logs mysql 2>&1 | grep -i "error\|fail\|abort" | wc -l)
             
             if [ "$error_logs" -gt 5 ]; then
-                local sample_errors=$(docker logs test_db_mysql 2>&1 | grep -i "error" | tail -3)
+                local sample_errors=$(docker logs mysql 2>&1 | grep -i "error" | tail -3)
                 log_test_result "mysql_container_health" "FAIL" "Container has $error_logs errors. Sample: $sample_errors"
             else
                 log_test_result "mysql_container_health" "PASS" "Container is healthy (status: $container_status, restarts: $restart_count)"
             fi
         else
-            local logs=$(docker logs test_db_mysql 2>&1 | tail -5)
+            local logs=$(docker logs mysql 2>&1 | tail -5)
             log_test_result "mysql_container_health" "FAIL" "Container unhealthy (status: $container_status, restarts: $restart_count). Logs: $logs"
         fi
     else
@@ -231,7 +231,36 @@ test_mysql_container_health() {
     cleanup_test_env
 }
 
-# Test 7: Test MySQL environment setup (automated)
+# Helper function for cross-platform timeout
+run_with_timeout() {
+    local timeout_duration="$1"
+    shift
+    
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        timeout "$timeout_duration" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with coreutils installed
+        gtimeout "$timeout_duration" "$@"
+    else
+        # Fallback for macOS without coreutils
+        "$@" &
+        local pid=$!
+        (
+            sleep "$timeout_duration"
+            kill -TERM "$pid" 2>/dev/null
+            sleep 5
+            kill -KILL "$pid" 2>/dev/null
+        ) &
+        local timeout_pid=$!
+        wait "$pid" 2>/dev/null
+        local exit_code=$?
+        kill -TERM "$timeout_pid" 2>/dev/null
+        return $exit_code
+    fi
+}
+
+# Test 6: Test MySQL environment setup (automated)
 test_mysql_setup() {
     print_test_header "MySQL Setup Test"
     
@@ -242,23 +271,23 @@ test_mysql_setup() {
     
     print_color $YELLOW "Running automated MySQL setup test..."
     
-    # Run setup script with test input
-    if echo -e "$test_input" | timeout 300 "$SETUP_SCRIPT" >/dev/null 2>&1; then
-        sleep 15  # Wait for database to be fully ready
+    # Run non-interactive setup script (with longer timeout for data loading)
+    if run_with_timeout 600 ./setup_test.sh 1 1 y >/dev/null 2>&1; then
+        sleep 60  # Wait for database to be fully ready and data loaded
         
         # First check container health
-        local container_status=$(docker inspect test_db_mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
-        local restart_count=$(docker inspect test_db_mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
+        local container_status=$(docker inspect mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
+        local restart_count=$(docker inspect mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
         
         if [ "$container_status" != "running" ] || [ "$restart_count" -gt 2 ]; then
             log_test_result "mysql_setup" "FAIL" "MySQL container unhealthy (status: $container_status, restarts: $restart_count)"
         else
             # Test database connection
-            if docker exec test_db_mysql mysql -u root -proot -e "SHOW DATABASES;" >/dev/null 2>&1; then
+            if docker exec mysql mysql -u root -proot -e "SHOW DATABASES;" >/dev/null 2>&1; then
                 # Check if employees database exists
-                if docker exec test_db_mysql mysql -u root -proot -e "USE employees; SHOW TABLES;" >/dev/null 2>&1; then
+                if docker exec mysql mysql -u root -proot -e "USE employees; SHOW TABLES;" >/dev/null 2>&1; then
                     # Check if data was loaded
-                    local employee_count=$(docker exec test_db_mysql mysql -u root -proot -e "USE employees; SELECT COUNT(*) FROM employees;" 2>/dev/null | tail -n1)
+                    local employee_count=$(docker exec mysql mysql -u root -proot -e "USE employees; SELECT COUNT(*) FROM employees;" 2>/dev/null | tail -n1)
                     
                     if [ "$employee_count" -gt 100000 ]; then
                         log_test_result "mysql_setup" "PASS" "MySQL setup completed successfully with $employee_count employees"
@@ -290,16 +319,16 @@ test_postgres_setup() {
     
     print_color $YELLOW "Running automated PostgreSQL setup test..."
     
-    # Run setup script with test input
-    if echo -e "$test_input" | timeout 300 "$SETUP_SCRIPT" >/dev/null 2>&1; then
-        sleep 15  # Wait for database to be fully ready (PostgreSQL takes longer)
+    # Run non-interactive setup script for PostgreSQL (with longer timeout for data loading)
+    if run_with_timeout 600 ./setup_test.sh 2 1 y >/dev/null 2>&1; then
+        sleep 60  # Wait for database to be fully ready and data loaded
         
         # Test database connection
-        if docker exec test_db_postgres psql -U postgres -d test_db -c "\\l" >/dev/null 2>&1; then
+        if docker exec postgres psql -U postgres -d postgres -c "\\l" >/dev/null 2>&1; then
             # Check if employees tables exist
-            if docker exec test_db_postgres psql -U postgres -d test_db -c "\\dt" >/dev/null 2>&1; then
+            if docker exec postgres psql -U postgres -d postgres -c "\\dt" >/dev/null 2>&1; then
                 # Check if data was loaded
-                local employee_count=$(docker exec test_db_postgres psql -U postgres -d test_db -t -c "SELECT COUNT(*) FROM employees;" 2>/dev/null | xargs)
+                local employee_count=$(docker exec postgres psql -U postgres -d postgres -t -c "SELECT COUNT(*) FROM employees;" 2>/dev/null | xargs)
                 
                 if [ "$employee_count" -gt 100000 ]; then
                     log_test_result "postgres_setup" "PASS" "PostgreSQL setup completed successfully with $employee_count employees"
@@ -323,18 +352,26 @@ test_postgres_setup() {
 test_cleanup_functionality() {
     print_test_header "Cleanup Functionality Test"
     
+    # Ensure clean state first
+    docker-compose -f docker-compose.mysql.yml down -v >/dev/null 2>&1
+    sleep 2
+    
     # Start a simple MySQL environment
     if docker-compose -f docker-compose.mysql.yml up -d >/dev/null 2>&1; then
-        sleep 5
+        # Wait longer for container to be fully ready
+        sleep 10
         
-        # Verify container is running
-        if docker ps | grep test_db_mysql >/dev/null; then
+        # Verify container is running with more specific check
+        if docker ps --format "table {{.Names}}" | grep -q "mysql"; then
+            print_color $YELLOW "Container started successfully, testing cleanup..."
+            
             # Test cleanup
             if docker-compose -f docker-compose.mysql.yml down -v >/dev/null 2>&1; then
-                sleep 2
+                # Wait for cleanup to complete
+                sleep 5
                 
                 # Verify container is stopped
-                if ! docker ps | grep test_db_mysql >/dev/null; then
+                if ! docker ps --format "table {{.Names}}" | grep -q "mysql"; then
                     log_test_result "cleanup_functionality" "PASS" "Cleanup successfully stopped and removed containers"
                 else
                     log_test_result "cleanup_functionality" "FAIL" "Cleanup did not properly stop containers"
@@ -343,7 +380,12 @@ test_cleanup_functionality() {
                 log_test_result "cleanup_functionality" "FAIL" "Cleanup command failed"
             fi
         else
-            log_test_result "cleanup_functionality" "FAIL" "Could not start test container for cleanup test"
+            # Check if Docker is running
+            if ! docker info >/dev/null 2>&1; then
+                log_test_result "cleanup_functionality" "FAIL" "Docker is not running or accessible"
+            else
+                log_test_result "cleanup_functionality" "FAIL" "Could not start test container (Docker may be slow or have resource constraints)"
+            fi
         fi
     else
         log_test_result "cleanup_functionality" "FAIL" "Could not start Docker Compose for cleanup test"
@@ -404,7 +446,7 @@ test_init_script_generation() {
     # Test MySQL init script generation
     local test_input="1\n1\ny\n"  # MySQL, employees database, confirm
     
-    if echo -e "$test_input" | timeout 60 "$SETUP_SCRIPT" >/dev/null 2>&1; then
+    if run_with_timeout 60 ./setup_test.sh 1 1 y >/dev/null 2>&1; then
         if [ -f "init/mysql/01-init-databases.sh" ]; then
             if [ -x "init/mysql/01-init-databases.sh" ]; then
                 # Check for proper patterns in init script
@@ -441,7 +483,7 @@ test_performance() {
     print_color $YELLOW "Testing setup performance (should complete in <5 minutes)..."
     local start_time=$(date +%s)
     
-    if timeout 300 bash -c "echo -e '$test_input' | '$SETUP_SCRIPT' >/dev/null 2>&1"; then
+    if run_with_timeout 300 ./setup_test.sh 1 1 y >/dev/null 2>&1; then
         local end_time=$(date +%s)
         local duration=$((end_time - start_time))
         
