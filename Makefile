@@ -43,11 +43,13 @@ test:
 
 test-quick:
 	@echo "Running quick tests..."
-	@./test_setup.sh --quick
+	@./test_setup.sh --quick; exit $$?
 
 test-integration:
 	@echo "Running integration tests..."
-	@./test_setup.sh 2>/dev/null | grep -E "(PASS|FAIL|TEST:|MySQL Setup|PostgreSQL Setup|Performance)" || true
+	@set -o pipefail; ./test_setup.sh | tee /tmp/test_output.log; test_exit=$$?; \
+	grep -E "(PASS|FAIL|TEST:|MySQL Setup|PostgreSQL Setup|Performance|TEST SUMMARY)" /tmp/test_output.log || true; \
+	exit $$test_exit
 
 # Management commands
 logs:
@@ -74,15 +76,16 @@ clean:
 # Validation commands
 validate:
 	@echo "Validating project structure..."
-	@./test_setup.sh --quick
-	@echo ""
-	@echo "Validating Docker Compose files..."
-	@docker-compose -f docker-compose.mysql.yml config >/dev/null && echo "✓ MySQL compose file is valid"
-	@docker-compose -f docker-compose.postgres.yml config >/dev/null && echo "✓ PostgreSQL compose file is valid"
-	@echo ""
-	@echo "Checking script permissions..."
-	@test -x setup.sh && echo "✓ setup.sh is executable" || echo "✗ setup.sh is not executable"
-	@test -x test_setup.sh && echo "✓ test_setup.sh is executable" || echo "✗ test_setup.sh is not executable"
+	@./test_setup.sh --quick; quick_exit=$$?; \
+	echo ""; \
+	echo "Validating Docker Compose files..."; \
+	docker-compose -f docker-compose.mysql.yml config >/dev/null && echo "✓ MySQL compose file is valid" || (echo "✗ MySQL compose file invalid" && exit 1); \
+	docker-compose -f docker-compose.postgres.yml config >/dev/null && echo "✓ PostgreSQL compose file is valid" || (echo "✗ PostgreSQL compose file invalid" && exit 1); \
+	echo ""; \
+	echo "Checking script permissions..."; \
+	test -x setup.sh && echo "✓ setup.sh is executable" || (echo "✗ setup.sh is not executable" && exit 1); \
+	test -x test_setup.sh && echo "✓ test_setup.sh is executable" || (echo "✗ test_setup.sh is not executable" && exit 1); \
+	exit $$quick_exit
 
 # Status command
 status:
@@ -117,7 +120,7 @@ dev-postgres:
 # CI/CD helpers
 ci-test:
 	@echo "Running CI tests..."
-	@./test_setup.sh --quick
+	@./test_setup.sh --quick; exit $$?
 
 # Install development dependencies (if needed)
 install:

@@ -533,11 +533,42 @@ case "${1:-}" in
         ;;
     --quick|-q)
         print_color $YELLOW "Running quick tests only..."
+        
+        # Initialize test results file
+        echo "Test Database Setup - Quick Test Results" > "$TEST_RESULTS_FILE"
+        echo "Started: $(date)" >> "$TEST_RESULTS_FILE"
+        echo "----------------------------------------" >> "$TEST_RESULTS_FILE"
+        
+        # Run quick tests
         test_setup_script_exists
         test_docker_available
         test_directory_structure
         test_database_files
         test_docker_compose_files
+        test_standardized_structure
+        
+        # Print summary and exit with appropriate code
+        echo
+        print_color $CYAN "========================================"
+        print_color $CYAN "QUICK TEST SUMMARY"
+        print_color $CYAN "========================================"
+        
+        passed_tests=$((TOTAL_TESTS - FAILED_TESTS))
+        
+        print_color $GREEN "Passed: $passed_tests"
+        print_color $RED "Failed: $FAILED_TESTS"
+        print_color $BLUE "Total:  $TOTAL_TESTS"
+        
+        echo
+        echo "Detailed results saved to: $TEST_RESULTS_FILE"
+        
+        if [ $FAILED_TESTS -eq 0 ]; then
+            print_color $GREEN "🎉 All quick tests passed!"
+            exit 0
+        else
+            print_color $RED "❌ Some quick tests failed!"
+            exit 1
+        fi
         ;;
     --clean|-c)
         print_color $YELLOW "Cleaning test environment..."

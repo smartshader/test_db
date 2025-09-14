@@ -35,13 +35,13 @@ jobs:
     - name: Run quick tests
       if: matrix.test-type == 'quick'
       run: |
-        ./test_setup.sh --quick
+        make test-quick
         
     - name: Run integration tests
       if: matrix.test-type == 'integration'
       run: |
-        # Run full test suite including database setup
-        timeout 1800 ./test_setup.sh || true
+        # Run integration test suite - will fail fast on errors
+        timeout 1800 make test-integration
         
     - name: Upload test results
       if: always()
@@ -58,6 +58,10 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      
+    - name: Run basic validation tests
+      run: |
+        make ci-test
       
     - name: Run security scan on scripts
       run: |
