@@ -48,10 +48,20 @@ cleanup() {
 # Function to generate MySQL initialization script
 generate_mysql_init() {
     local databases=("$@")
-    local init_file="init/mysql/01-init-databases.sql"
     
-    echo "-- Auto-generated MySQL initialization script" > "$init_file"
-    echo "-- Generated on $(date)" >> "$init_file"
+    # Create a shell script instead of SQL for MySQL initialization
+    local init_file="init/mysql/01-init-databases.sh"
+    
+    cat > "$init_file" << 'EOF'
+#!/bin/bash
+# Auto-generated MySQL initialization script
+set -e
+
+echo "Starting MySQL database initialization..."
+
+EOF
+    
+    echo "# Generated on $(date)" >> "$init_file"
     echo "" >> "$init_file"
     
     for db in "${databases[@]}"; do
@@ -60,17 +70,23 @@ generate_mysql_init() {
                 print_color $BLUE "  → Adding MySQL employees database..."
                 cat >> "$init_file" << 'EOF'
 
--- Load employees database
-SOURCE /databases/employees/mysql/employees.sql;
+# Load employees database
+echo "Loading employees database..."
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/employees/mysql/employees.sql
+echo "✓ Employees database loaded"
+
 EOF
                 ;;
             "sakila")
                 print_color $BLUE "  → Adding Sakila database..."
                 cat >> "$init_file" << 'EOF'
 
--- Load Sakila database
-SOURCE /databases/sakila/sakila-mv-schema.sql;
-SOURCE /databases/sakila/sakila-mv-data.sql;
+# Load Sakila database
+echo "Loading Sakila database..."
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/sakila/sakila-mv-schema.sql
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/sakila/sakila-mv-data.sql
+echo "✓ Sakila database loaded"
+
 EOF
                 ;;
         esac
@@ -78,9 +94,14 @@ EOF
     
     cat >> "$init_file" << 'EOF'
 
--- Display loaded databases
-SHOW DATABASES;
+# Display loaded databases
+echo "Available databases:"
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES;"
+
+echo "MySQL initialization completed!"
 EOF
+    
+    chmod +x "$init_file"
 }
 
 # Function to generate PostgreSQL initialization script

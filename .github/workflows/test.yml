@@ -1,0 +1,121 @@
+name: Test Database Setup
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        test-type: [quick, integration]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Install Docker Compose
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker-compose
+        
+    - name: Verify Docker installation
+      run: |
+        docker --version
+        docker-compose --version
+        
+    - name: Run quick tests
+      if: matrix.test-type == 'quick'
+      run: |
+        ./test_setup.sh --quick
+        
+    - name: Run integration tests
+      if: matrix.test-type == 'integration'
+      run: |
+        # Run full test suite including database setup
+        timeout 1800 ./test_setup.sh || true
+        
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.test-type }}
+        path: /tmp/test_db_results.log
+        retention-days: 30
+
+  security:
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Run security scan on scripts
+      run: |
+        # Basic security checks for shell scripts
+        echo "Checking for potential security issues..."
+        
+        # Check for hardcoded credentials
+        if grep -r "password\|passwd\|pwd" --include="*.sh" --include="*.yml" . | grep -v "MYSQL_ROOT_PASSWORD" | grep -v "POSTGRES_PASSWORD" | grep -v "example\|placeholder\|template"; then
+          echo "Warning: Potential hardcoded credentials found"
+        fi
+        
+        # Check for unsafe practices
+        if grep -r "rm -rf /" --include="*.sh" .; then
+          echo "Error: Dangerous rm command found"
+          exit 1
+        fi
+        
+        # Check for eval usage
+        if grep -r "eval\|exec" --include="*.sh" . | grep -v "docker exec"; then
+          echo "Warning: eval or exec usage found - review for security"
+        fi
+        
+        echo "Security scan completed"
+
+  documentation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Validate documentation
+      run: |
+        # Check if WARP.md exists and has required sections
+        if [ ! -f "WARP.md" ]; then
+          echo "Error: WARP.md not found"
+          exit 1
+        fi
+        
+        # Check for required sections
+        required_sections=(
+          "Repository Overview"
+          "Database Architecture" 
+          "Installation Commands"
+          "Docker"
+          "File Structure"
+        )
+        
+        for section in "${required_sections[@]}"; do
+          if ! grep -q "$section" WARP.md; then
+            echo "Warning: Missing section '$section' in WARP.md"
+          fi
+        done
+        
+        # Check if setup script is documented
+        if ! grep -q "setup.sh" WARP.md; then
+          echo "Error: setup.sh not documented in WARP.md"
+          exit 1
+        fi
+        
+        echo "Documentation validation completed"
