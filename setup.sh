@@ -50,13 +50,15 @@ generate_mysql_init() {
     local databases=("$@")
     
     # Create a shell script that will be executed by Docker during initialization
-    # This is the only way to handle the employees.sql file which uses 'source' commands
+    # This script processes SQL files and resolves 'source' commands
     local init_file="init/mysql/01-init-databases.sh"
     
     cat > "$init_file" << 'EOF'
 #!/bin/bash
 # Auto-generated MySQL initialization script for Docker
-# This runs in the Docker entrypoint before MySQL starts accepting connections
+# This runs in the Docker entrypoint and processes SQL files with source commands
+
+set -e
 
 echo "Starting database initialization..."
 
@@ -65,6 +67,48 @@ until mysqladmin ping --silent; do
     echo "Waiting for MySQL to be ready..."
     sleep 2
 done
+
+# Function to process SQL files and resolve 'source' commands
+process_sql_file() {
+    local input_file="$1"
+    local output_file="$2"
+    local base_dir="$(dirname "$input_file")"
+    
+    echo "Processing SQL file: $input_file"
+    
+    # Read the input file line by line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Check if line contains a source command
+        if echo "$line" | grep -q "^[[:space:]]*source[[:space:]]"; then
+            # Extract the filename from the source command
+            local source_file=$(echo "$line" | sed 's/^[[:space:]]*source[[:space:]]*//' | sed 's/[[:space:]]*;[[:space:]]*$//' | tr -d ' ')
+            
+            # Construct full path to the source file
+            local full_source_path="$base_dir/$source_file"
+            
+            echo "  → Embedding content from: $source_file"
+            
+            # Add a comment about the embedded file
+            echo "-- Content from: $source_file" >> "$output_file"
+            
+            if [ -f "$full_source_path" ]; then
+                # Recursively process the sourced file (in case it has more source commands)
+                local temp_file=$(mktemp)
+                process_sql_file "$full_source_path" "$temp_file"
+                cat "$temp_file" >> "$output_file"
+                rm -f "$temp_file"
+            else
+                echo "-- WARNING: Source file not found: $full_source_path" >> "$output_file"
+                echo "WARNING: Source file not found: $full_source_path"
+            fi
+            
+            echo "-- End of content from: $source_file" >> "$output_file"
+        else
+            # Regular line, copy as-is
+            echo "$line" >> "$output_file"
+        fi
+    done < "$input_file"
+}
 
 EOF
     
@@ -77,10 +121,13 @@ EOF
                 print_color $BLUE "  → Adding MySQL employees database..."
                 cat >> "$init_file" << 'EOF'
 
-# Load employees database
+# Load employees database with source command processing
 echo "Loading employees database..."
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/employees/mysql/employees.sql
-echo "✓ Employees database loaded"
+processed_file=$(mktemp)
+process_sql_file "/databases/employees/mysql/employees.sql" "$processed_file"
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_file"
+rm -f "$processed_file"
+echo "✓ Employees database loaded with all data"
 
 EOF
                 ;;
@@ -90,8 +137,13 @@ EOF
 
 # Load Sakila database
 echo "Loading Sakila database..."
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/sakila/sakila-mv-schema.sql
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" < /databases/sakila/sakila-mv-data.sql
+processed_schema=$(mktemp)
+processed_data=$(mktemp)
+process_sql_file "/databases/sakila/sakila-mv-schema.sql" "$processed_schema"
+process_sql_file "/databases/sakila/sakila-mv-data.sql" "$processed_data"
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_schema"
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" < "$processed_data"
+rm -f "$processed_schema" "$processed_data"
 echo "✓ Sakila database loaded"
 
 EOF

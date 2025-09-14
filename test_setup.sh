@@ -364,8 +364,10 @@ test_init_script_generation() {
                     log_test_result "mysql_init_script" "FAIL" "MySQL initialization script missing wait-for-ready check (will cause connection errors)"
                 elif grep -q "mysql -u root" "init/mysql/01-init-databases.sh" && ! grep -q "until mysqladmin ping" "init/mysql/01-init-databases.sh"; then
                     log_test_result "mysql_init_script" "FAIL" "MySQL initialization script tries to connect without waiting for MySQL to be ready"
+                elif ! grep -q "process_sql_file" "init/mysql/01-init-databases.sh"; then
+                    log_test_result "mysql_init_script" "FAIL" "MySQL initialization script missing source command processing function"
                 else
-                    log_test_result "mysql_init_script" "PASS" "MySQL initialization script generated and valid"
+                    log_test_result "mysql_init_script" "PASS" "MySQL initialization script generated with source processing and proper readiness checks"
                 fi
             else
                 log_test_result "mysql_init_script" "FAIL" "MySQL initialization script generated but not executable"
