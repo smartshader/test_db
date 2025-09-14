@@ -193,7 +193,42 @@ test_docker_compose_files() {
     fi
 }
 
-# Test 6: Test MySQL environment setup (automated)
+# Test 6: Test MySQL container health
+test_mysql_container_health() {
+    print_test_header "MySQL Container Health Test"
+    
+    cleanup_test_env
+    
+    # Start MySQL environment without full setup
+    if docker-compose -f docker-compose.mysql.yml up -d >/dev/null 2>&1; then
+        sleep 30  # Wait longer for initialization
+        
+        # Check if container is running and not restarting
+        local container_status=$(docker inspect test_db_mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
+        local restart_count=$(docker inspect test_db_mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
+        
+        if [ "$container_status" = "running" ] && [ "$restart_count" -lt 3 ]; then
+            # Check for error patterns in logs
+            local error_logs=$(docker logs test_db_mysql 2>&1 | grep -i "error\|fail\|abort" | wc -l)
+            
+            if [ "$error_logs" -gt 5 ]; then
+                local sample_errors=$(docker logs test_db_mysql 2>&1 | grep -i "error" | tail -3)
+                log_test_result "mysql_container_health" "FAIL" "Container has $error_logs errors. Sample: $sample_errors"
+            else
+                log_test_result "mysql_container_health" "PASS" "Container is healthy (status: $container_status, restarts: $restart_count)"
+            fi
+        else
+            local logs=$(docker logs test_db_mysql 2>&1 | tail -5)
+            log_test_result "mysql_container_health" "FAIL" "Container unhealthy (status: $container_status, restarts: $restart_count). Logs: $logs"
+        fi
+    else
+        log_test_result "mysql_container_health" "FAIL" "Failed to start MySQL container"
+    fi
+    
+    cleanup_test_env
+}
+
+# Test 7: Test MySQL environment setup (automated)
 test_mysql_setup() {
     print_test_header "MySQL Setup Test"
     
@@ -206,25 +241,33 @@ test_mysql_setup() {
     
     # Run setup script with test input
     if echo -e "$test_input" | timeout 300 "$SETUP_SCRIPT" >/dev/null 2>&1; then
-        sleep 10  # Wait for database to be fully ready
+        sleep 15  # Wait for database to be fully ready
         
-        # Test database connection
-        if docker exec test_db_mysql mysql -u root -proot -e "SHOW DATABASES;" >/dev/null 2>&1; then
-            # Check if employees database exists
-            if docker exec test_db_mysql mysql -u root -proot -e "USE employees; SHOW TABLES;" >/dev/null 2>&1; then
-                # Check if data was loaded
-                local employee_count=$(docker exec test_db_mysql mysql -u root -proot -e "USE employees; SELECT COUNT(*) FROM employees;" 2>/dev/null | tail -n1)
-                
-                if [ "$employee_count" -gt 100000 ]; then
-                    log_test_result "mysql_setup" "PASS" "MySQL setup completed successfully with $employee_count employees"
+        # First check container health
+        local container_status=$(docker inspect test_db_mysql --format='{{.State.Status}}' 2>/dev/null || echo "not_found")
+        local restart_count=$(docker inspect test_db_mysql --format='{{.RestartCount}}' 2>/dev/null || echo "999")
+        
+        if [ "$container_status" != "running" ] || [ "$restart_count" -gt 2 ]; then
+            log_test_result "mysql_setup" "FAIL" "MySQL container unhealthy (status: $container_status, restarts: $restart_count)"
+        else
+            # Test database connection
+            if docker exec test_db_mysql mysql -u root -proot -e "SHOW DATABASES;" >/dev/null 2>&1; then
+                # Check if employees database exists
+                if docker exec test_db_mysql mysql -u root -proot -e "USE employees; SHOW TABLES;" >/dev/null 2>&1; then
+                    # Check if data was loaded
+                    local employee_count=$(docker exec test_db_mysql mysql -u root -proot -e "USE employees; SELECT COUNT(*) FROM employees;" 2>/dev/null | tail -n1)
+                    
+                    if [ "$employee_count" -gt 100000 ]; then
+                        log_test_result "mysql_setup" "PASS" "MySQL setup completed successfully with $employee_count employees"
+                    else
+                        log_test_result "mysql_setup" "FAIL" "MySQL setup completed but data not loaded correctly (only $employee_count employees)"
+                    fi
                 else
-                    log_test_result "mysql_setup" "FAIL" "MySQL setup completed but data not loaded correctly (only $employee_count employees)"
+                    log_test_result "mysql_setup" "FAIL" "MySQL setup completed but employees database not created"
                 fi
             else
-                log_test_result "mysql_setup" "FAIL" "MySQL setup completed but employees database not created"
+                log_test_result "mysql_setup" "FAIL" "MySQL setup completed but database connection failed"
             fi
-        else
-            log_test_result "mysql_setup" "FAIL" "MySQL setup completed but database connection failed"
         fi
     else
         log_test_result "mysql_setup" "FAIL" "Setup script failed to complete"
@@ -304,7 +347,7 @@ test_cleanup_functionality() {
     fi
 }
 
-# Test 9: Test initialization script generation
+# Test 9: Test initialization script generation and validation
 test_init_script_generation() {
     print_test_header "Initialization Script Generation"
     
@@ -316,7 +359,14 @@ test_init_script_generation() {
     if echo -e "$test_input" | timeout 60 "$SETUP_SCRIPT" >/dev/null 2>&1; then
         if [ -f "init/mysql/01-init-databases.sh" ]; then
             if [ -x "init/mysql/01-init-databases.sh" ]; then
-                log_test_result "mysql_init_script" "PASS" "MySQL initialization script generated and executable"
+                # Check for proper patterns in init script
+                if ! grep -q "until mysqladmin ping" "init/mysql/01-init-databases.sh"; then
+                    log_test_result "mysql_init_script" "FAIL" "MySQL initialization script missing wait-for-ready check (will cause connection errors)"
+                elif grep -q "mysql -u root" "init/mysql/01-init-databases.sh" && ! grep -q "until mysqladmin ping" "init/mysql/01-init-databases.sh"; then
+                    log_test_result "mysql_init_script" "FAIL" "MySQL initialization script tries to connect without waiting for MySQL to be ready"
+                else
+                    log_test_result "mysql_init_script" "PASS" "MySQL initialization script generated and valid"
+                fi
             else
                 log_test_result "mysql_init_script" "FAIL" "MySQL initialization script generated but not executable"
             fi
@@ -381,12 +431,13 @@ run_all_tests() {
     # Skip database setup tests if Docker is not available
     if docker info >/dev/null 2>&1; then
         print_color $YELLOW "Running integration tests (this may take several minutes)..."
+        test_mysql_container_health
         test_mysql_setup
         test_postgres_setup
         test_performance
     else
         print_color $YELLOW "Skipping integration tests (Docker not available)"
-        TOTAL_TESTS=$((TOTAL_TESTS + 3))  # Account for skipped tests
+        TOTAL_TESTS=$((TOTAL_TESTS + 4))  # Account for skipped tests
     fi
     
     # Final cleanup

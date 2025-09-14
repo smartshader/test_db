@@ -49,15 +49,22 @@ cleanup() {
 generate_mysql_init() {
     local databases=("$@")
     
-    # Create a shell script instead of SQL for MySQL initialization
+    # Create a shell script that will be executed by Docker during initialization
+    # This is the only way to handle the employees.sql file which uses 'source' commands
     local init_file="init/mysql/01-init-databases.sh"
     
     cat > "$init_file" << 'EOF'
 #!/bin/bash
-# Auto-generated MySQL initialization script
-set -e
+# Auto-generated MySQL initialization script for Docker
+# This runs in the Docker entrypoint before MySQL starts accepting connections
 
-echo "Starting MySQL database initialization..."
+echo "Starting database initialization..."
+
+# Wait for MySQL to be available in the initialization context
+until mysqladmin ping --silent; do
+    echo "Waiting for MySQL to be ready..."
+    sleep 2
+done
 
 EOF
     
@@ -94,11 +101,7 @@ EOF
     
     cat >> "$init_file" << 'EOF'
 
-# Display loaded databases
-echo "Available databases:"
-mysql -u root -p"$MYSQL_ROOT_PASSWORD" -e "SHOW DATABASES;"
-
-echo "MySQL initialization completed!"
+echo "Database initialization completed successfully!"
 EOF
     
     chmod +x "$init_file"
