@@ -110,7 +110,7 @@ EOF
 echo "Loading employees data into PostgreSQL..."
 
 # Load data using psql
-psql -U postgres -d test_db << 'EOSQL'
+psql -U postgres -d postgres << 'EOSQL'
 -- Load departments data
 \copy departments FROM '/databases/employees/mysql/load_departments.dump' WITH (FORMAT csv, DELIMITER E'\t', NULL '\N');
 
@@ -189,14 +189,14 @@ start_environment() {
     if [ "$engine" = "mysql" ]; then
         docker-compose -f docker-compose.mysql.yml up -d
         print_color $GREEN "✓ MySQL is starting up..."
-        print_color $CYAN "  Database: mysql://root:root@localhost:3306/test_db"
+        print_color $CYAN "  Database: mysql://root:root@localhost:3306/postgres"
         print_color $CYAN "  Web UI: http://localhost:8080 (Adminer)"
     elif [ "$engine" = "postgres" ]; then
         docker-compose -f docker-compose.postgres.yml up -d
         print_color $GREEN "✓ PostgreSQL is starting up..."
-        print_color $CYAN "  Database: postgresql://postgres:postgres@localhost:5432/test_db"
+        print_color $CYAN "  Database: postgresql://postgres:postgres@localhost:5432/postgres"
         print_color $CYAN "  Web UI: http://localhost:8081 (pgAdmin)"
-        print_color $CYAN "  pgAdmin login: admin@test_db.local / admin"
+        print_color $CYAN "  pgAdmin login: admin@postgres.local / admin"
     fi
     
     echo
@@ -204,12 +204,12 @@ start_environment() {
     sleep 5
     
     if [ "$engine" = "mysql" ]; then
-        while ! docker exec test_db_mysql mysqladmin ping -h localhost -u root -proot --silent; do
+        while ! docker exec mysql mysqladmin ping -h localhost -u root -proot --silent; do
             print_color $YELLOW "  Waiting for MySQL..."
             sleep 2
         done
     elif [ "$engine" = "postgres" ]; then
-        while ! docker exec test_db_postgres pg_isready -U postgres -d test_db > /dev/null 2>&1; do
+        while ! docker exec postgres pg_isready -U postgres -d postgres > /dev/null 2>&1; do
             print_color $YELLOW "  Waiting for PostgreSQL..."
             sleep 2
         done
@@ -323,10 +323,10 @@ main() {
     echo
     print_color $CYAN "Connection Information:"
     if [ "$ENGINE" = "mysql" ]; then
-        print_color $BLUE "  CLI: mysql -h localhost -P 3306 -u root -proot test_db"
+        print_color $BLUE "  CLI: mysql -h localhost -P 3306 -u root -proot"
         print_color $BLUE "  Web: http://localhost:8080"
     elif [ "$ENGINE" = "postgres" ]; then
-        print_color $BLUE "  CLI: psql -h localhost -p 5432 -U postgres -d test_db"
+        print_color $BLUE "  CLI: psql -h localhost -p 5432 -U postgres -d postgres"
         print_color $BLUE "  Web: http://localhost:8081"
     fi
     
